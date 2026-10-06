@@ -67,6 +67,39 @@
       <span>共 {{ total }} 条技术供水记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
+
+    <!-- 技术供水值班台账：检修完工处理结果回写到这里；与「机组检修」页是同一份数据、同一个条数。 -->
+    <section class="ledger-panel">
+      <div class="ledger-head">
+        <h3>值班台账 · 机组检修处理结果</h3>
+        <span class="ledger-count">共 {{ dutyRows.length }} 条（与机组检修页台账入口同源）</span>
+      </div>
+      <table class="data-table ledger-table">
+        <thead>
+          <tr>
+            <th>工作票号</th><th>检修机组</th><th>检修级别</th><th>计划/实际工期(天)</th>
+            <th>验收人员</th><th>验收结论</th><th>规则版本</th><th>完工时间</th><th>来源</th><th>备注</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in dutyRows" :key="item.id">
+            <td>{{ item.ticketNo }}</td>
+            <td>{{ item.unit }}</td>
+            <td>{{ item.level }}</td>
+            <td>{{ item.plannedDays }} / {{ item.actualDays }}</td>
+            <td>{{ item.inspector }}</td>
+            <td>{{ item.conclusion }}</td>
+            <td>{{ item.ruleVersion }}</td>
+            <td>{{ item.completedAt }}</td>
+            <td>{{ item.source }}</td>
+            <td>{{ item.remark }}</td>
+          </tr>
+          <tr v-if="!dutyRows.length">
+            <td colspan="10" class="empty-state">值班台账暂无检修处理结果，待检修工作票办理完工后回写</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
   </section>
 </template>
 
@@ -79,7 +112,8 @@ import {
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
-import type { EntryRow } from '@/data/types'
+import { listDutyLedger } from '@/api/overhaul-service'
+import type { DutyLedgerEntry, EntryRow } from '@/data/types'
 
 const meta = moduleMeta('cooling')
 const columns = ["系统编号", "供水类型", "供水压力", "供水流量", "水温数值", "滤水器压差", "检查日期", "系统状态"]
@@ -91,6 +125,7 @@ const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
+const dutyRows = ref<DutyLedgerEntry[]>([])
 const filterFields = columns.slice(0, 3)
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
@@ -128,6 +163,8 @@ function reload() {
     const payload = listEntries(meta.key, filters.value)
     rows.value = payload.items
     total.value = payload.total
+    // 台账每次都回读同一份持久化数据，不做本地缓存副本，保证两个入口条数一致。
+    dutyRows.value = listDutyLedger()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '技术供水列表读取失败'
   }
@@ -135,3 +172,11 @@ function reload() {
 
 onMounted(reload)
 </script>
+
+<style scoped>
+.ledger-panel { margin-top: 18px; background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+.ledger-head { display: flex; justify-content: space-between; align-items: center; }
+.ledger-head h3 { margin: 0; font-size: 14px; }
+.ledger-count { color: var(--muted); font-size: 12px; }
+.ledger-table { margin-top: 8px; font-size: 12px; }
+</style>

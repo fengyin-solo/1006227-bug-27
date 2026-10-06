@@ -40,20 +40,45 @@ export function runAction(key: string, id: number, action: string): ActionResult
     return { ok: false, message: `没有找到编号为 ${id} 的${meta.entity}` }
   }
   const current = String(rows[index].status)
-  if (current === target) {
+
+  // 登记了流转边的模块（如检修工作票）：严格按边执行，正向只能逐档推进，
+  // 逆向动作必须是 transitions 里带 reverse 的既定入口，跳档一律拒绝。
+  const edge = meta.transitions?.[action]
+  if (edge) {
+    if (current === edge.to && edge.from !== edge.to) {
+      return { ok: false, message: `${meta.entity}已经是「${edge.to}」，不用重复操作` }
+    }
+    if (current !== edge.from) {
+      if (edge.reverse) {
+        return { ok: false, message: `只有「${edge.from}」的${meta.entity}才能${action}，当前为「${current}」` }
+      }
+      const expectedIndex = meta.statuses.indexOf(edge.from)
+      const currentIndex = meta.statuses.indexOf(current)
+      if (currentIndex > expectedIndex) {
+        return { ok: false, message: `流转顺序为「${meta.statuses.join(' → ')}」，「${current}」不能跳回/跳到「${edge.to}」` }
+      }
+      return { ok: false, message: `流转顺序为「${meta.statuses.join(' → ')}」，需先到「${edge.from}」才能${action}，当前为「${current}」` }
+    }
+  } else if (current === target) {
     return { ok: false, message: `${meta.entity}已经是「${target}」，不用重复操作` }
   }
+
   const lastStatus = meta.statuses[meta.statuses.length - 1]
+  const reverse = edge?.reverse === true
   const updated: EntryRow = {
     ...rows[index],
     status: target,
     pending: target !== lastStatus,
-    abnormal: NEGATIVE_ACTIONS.some((verb) => action.startsWith(verb)),
+    abnormal: reverse || NEGATIVE_ACTIONS.some((verb) => action.startsWith(verb)),
   }
   const next = [...rows]
   next[index] = updated
-  saveRows(key, next)
-  return { ok: true, message: `${meta.entity}已${action}，当前状态「${target}」` }
+  try {
+    saveRows(key, next)
+  } catch {
+    return { ok: false, message: `${action}写入失败，已整套退回，记录未改动` }
+  }
+  return { ok: true, message: `${meta.entity}已${action}，当前状态「${target}」`, row: updated }
 }
 
 export function resetModule(key: string): PageResult {
