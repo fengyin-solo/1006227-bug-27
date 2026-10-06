@@ -67,6 +67,49 @@
       <span>共 {{ total }} 条技术供水记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
+
+    <section class="duty-ledger">
+      <header class="ledger-head">
+        <h3>检修处理结果值班台账（机组检修完工回写）</h3>
+        <span class="ledger-count" :class="{ 'mismatch': !ledgerAligned }">
+          台账 {{ ledgerRows.length }} 条 ｜ 已完工工作票 {{ completedTicketCount }} 条
+          <strong :class="ledgerAligned ? 'ok-text' : 'error-text'">
+            {{ ledgerAligned ? '（条数一致）' : '（条数不一致！）' }}
+          </strong>
+        </span>
+      </header>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>工作票号</th>
+            <th>检修机组</th>
+            <th>处理动作</th>
+            <th>实际工期</th>
+            <th>验收人员</th>
+            <th>验收结论</th>
+            <th>结论版本</th>
+            <th>记录时间</th>
+            <th>备注</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="entry in ledgerRows" :key="String(entry.id)">
+            <td>{{ entry['关联工作票'] }}</td>
+            <td>{{ entry['检修机组'] }}</td>
+            <td>{{ entry['处理动作'] }}</td>
+            <td>{{ entry['实际工期'] }}</td>
+            <td>{{ entry['验收人员'] || '—' }}</td>
+            <td>{{ entry['验收结论'] || '—' }}</td>
+            <td>{{ entry['结论版本'] || '—' }}</td>
+            <td>{{ entry['记录时间'] }}</td>
+            <td class="reason-cell">{{ entry['备注'] }}</td>
+          </tr>
+          <tr v-if="!ledgerRows.length">
+            <td colspan="9" class="empty-state">暂无检修处理结果回写记录</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
   </section>
 </template>
 
@@ -79,6 +122,8 @@ import {
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
+import { getLedger, getTickets } from '@/data/overhaul-store'
+import type { DutyLedgerEntry } from '@/data/overhaul-types'
 import type { EntryRow } from '@/data/types'
 
 const meta = moduleMeta('cooling')
@@ -92,6 +137,9 @@ const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+const ledgerRows = ref<DutyLedgerEntry[]>([])
+const completedTicketCount = ref(0)
+const ledgerAligned = ref(true)
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
@@ -131,6 +179,10 @@ function reload() {
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '技术供水列表读取失败'
   }
+  // 值班台账直接读检修域的同一份存储：另一个入口里的条数必须相同。
+  ledgerRows.value = [...getLedger()].sort((a, b) => b.记录时间.localeCompare(a.记录时间))
+  completedTicketCount.value = getTickets().filter((ticket) => ticket.status === '已完工').length
+  ledgerAligned.value = ledgerRows.value.length === completedTicketCount.value
 }
 
 onMounted(reload)

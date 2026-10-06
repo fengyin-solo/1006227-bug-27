@@ -1,4 +1,5 @@
 import { MODULE_BY_KEY } from '@/data/modules'
+import { getTickets as getOverhaulTickets } from '@/data/overhaul-store'
 import { allRows, listRows, resetRows, saveRows } from '@/data/local-store'
 import type { ActionResult, EntryRow, ModuleMeta, OverviewResult, PageResult } from '@/data/types'
 
@@ -24,6 +25,10 @@ export function filterRows(rows: EntryRow[], filters: Record<string, string>): E
 }
 
 export function listEntries(key: string, filters: Record<string, string> = {}): PageResult {
+  if (key === 'overhaul') {
+    // 检修工作票已迁入独立领域（含完工落库、台账回写），禁止再走通用只读入口读到另一份数据。
+    throw new Error('机组检修数据请走 overhaul-domain 提供的查询接口')
+  }
   const matched = filterRows(listRows(key), filters)
   return { items: matched, total: matched.length, page: 1, size: matched.length }
 }
@@ -87,7 +92,8 @@ export function downloadEntries(key: string): void {
 export function loadOverview(): OverviewResult {
   const rows = allRows()
   const modules = [...MODULE_BY_KEY.values()].map((meta) => {
-    const entries = rows[meta.key] ?? []
+    // 机组检修走独立领域存储：概览条数与检修列表、详情、另存清单必须是同一份。
+    const entries = meta.key === 'overhaul' ? (getOverhaulTickets() as unknown as EntryRow[]) : (rows[meta.key] ?? [])
     return {
       name: meta.name,
       created: entries.length,
